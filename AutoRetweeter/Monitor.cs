@@ -3,11 +3,13 @@
 
 using System;
 using System.Linq;
+using System.Threading;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 using Tweetinvi;
+using Tweetinvi.Events;
 using Tweetinvi.Models;
 
 namespace Prime23.AutoRetweeter
@@ -29,9 +31,35 @@ namespace Prime23.AutoRetweeter
             Auth.SetUserCredentials(apiKeys.ConsumerKey, apiKeys.ConsumerSecret, apiKeys.AccessToken, apiKeys.AccessTokenSecret);
         }
 
-        internal void Start()
+        internal void CheckRateLimits(object sender, QueryBeforeExecuteEventArgs args)
         {
-            var tweets = Timeline.GetHomeTimeline(maximumTweets: 50);
+            var queryRateLimits = RateLimit.GetQueryRateLimit(args.QueryURL);
+
+            // Some methods are not RateLimited. Invoking such a method will result in the queryRateLimits to be null
+            if (queryRateLimits == null)
+            {
+                return;
+            }
+
+            if (queryRateLimits.Remaining > 0)
+            {
+                // We have enough resource to execute the query
+                return;
+            }
+
+            // Strategy #1 : Wait for RateLimits to be available
+            this.logger.LogInformation("Waiting for RateLimits until: {0}", queryRateLimits.ResetDateTime.ToLongTimeString());
+            Thread.Sleep((int)queryRateLimits.ResetDateTimeInMilliseconds);
+        }
+
+        internal void ProcessTimeline()
+        {
+            var tweets = Timeline.GetHomeTimeline();
+            if (tweets == null)
+            {
+                this.logger.LogDebug("No new tweets yet...");
+                return;
+            }
 
             foreach (var tweet in tweets)
             {
@@ -50,7 +78,8 @@ namespace Prime23.AutoRetweeter
 
         private void ProcessLikes(ITweet tweet)
         {
-            if (!this.monitorSettings.LikeUsers.Contains(tweet.CreatedBy.UserIdentifier.IdStr))
+            if (!this.monitorSettings.LikeUsers.Any(
+                name => name.Equals(tweet.CreatedBy.UserIdentifier.ScreenName, StringComparison.OrdinalIgnoreCase)))
             {
                 return;
             }
@@ -72,7 +101,8 @@ namespace Prime23.AutoRetweeter
                 return;
             }
 
-            if (!this.monitorSettings.RetweetUsers.Contains(tweet.CreatedBy.UserIdentifier.IdStr))
+            if (!this.monitorSettings.RetweetUsers.Any(
+                name => name.Equals(tweet.CreatedBy.UserIdentifier.ScreenName, StringComparison.OrdinalIgnoreCase)))
             {
                 return;
             }
