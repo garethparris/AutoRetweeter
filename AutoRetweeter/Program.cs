@@ -1,19 +1,60 @@
 ﻿// <copyright file="Program.cs" company="Prime 23 Consultancy Limited">
 // Copyright © 2016-2020 Prime 23 Consultancy Limited. All rights reserved.</copyright>
 
-using System;
+using System.Diagnostics;
 using System.IO;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
-using Tweetinvi;
+using Serilog;
 
 namespace Prime23.AutoRetweeter
 {
     internal sealed class Program
     {
+        public static IConfiguration Configuration { get; set; }
+
+        private static bool IsDevelopment
+        {
+            get
+            {
+#if DEBUG
+                return Debugger.IsAttached;
+#else
+                return false;
+#endif
+            }
+        }
+
+        private static void ConfigureLogging(IServiceCollection services)
+        {
+            Log.Logger = new LoggerConfiguration()
+                .ReadFrom.Configuration(Configuration)
+                .CreateLogger();
+
+            services.AddLogging(
+                logging =>
+                {
+                    logging.AddSerilog();
+                });
+        }
+
+        private static void ConfigureScopes(IServiceCollection services)
+        {
+            services
+                .AddSingleton<MonitorSettings>()
+                .AddSingleton<Monitor>();
+        }
+
+        private static void ConfigureSettings(IServiceCollection services)
+        {
+            services.AddOptions()
+                .Configure<TwitterSettings>(Configuration.GetSection("Twitter"))
+                .Configure<RetweetSettings>(Configuration.GetSection("Retweet"))
+                .Configure<LikeSettings>(Configuration.GetSection("Like"));
+        }
+
         static void Main(string[] args)
         {
             var builder = new ConfigurationBuilder()
@@ -28,30 +69,16 @@ namespace Prime23.AutoRetweeter
 
             Configuration = builder.Build();
 
-            var serviceProvider = new ServiceCollection()
-                .Configure<TwitterSettings>(Configuration.GetSection("Twitter"))
-                .Configure<RetweetSettings>(Configuration.GetSection("Retweet"))
-                .Configure<LikeSettings>(Configuration.GetSection("Like"))
-                .AddOptions()
-                .AddSingleton<TimeLineMonitor>()
-                .BuildServiceProvider();
+            var services = new ServiceCollection();
 
-            var monitor = serviceProvider.GetService<TimeLineMonitor>();
+            ConfigureSettings(services);
+            ConfigureLogging(services);
+            ConfigureScopes(services);
+
+            var serviceProvider = services.BuildServiceProvider();
+
+            var monitor = serviceProvider.GetService<Monitor>();
             monitor.Start();
         }
-
-        private static bool IsDevelopment
-        {
-            get
-            {
- #if DEBUG
-                return System.Diagnostics.Debugger.IsAttached;
-#else
-                return false;
-#endif
-            }
-        }
-
-        public static IConfiguration Configuration { get; set; }
     }
 }
