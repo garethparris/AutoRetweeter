@@ -2,6 +2,7 @@
 // Copyright © 2016-2020 Prime 23 Consultancy Limited. All rights reserved.</copyright>
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
@@ -11,13 +12,20 @@ using Microsoft.Extensions.Options;
 using Tweetinvi;
 using Tweetinvi.Events;
 using Tweetinvi.Models;
+using Tweetinvi.Parameters;
 
 namespace Prime23.AutoRetweeter
 {
     public sealed class Monitor
     {
+        private const int TweetBatchCount = 20;
+        private const int NoTweetsRetryDelayInSeconds = 60;
+
         private readonly ILogger<Monitor> logger;
         private readonly MonitorSettings monitorSettings;
+
+        private long lastProcessedTweetId;
+        private long sinceId;
 
         public Monitor(
             ILogger<Monitor> logger,
@@ -47,33 +55,72 @@ namespace Prime23.AutoRetweeter
                 return;
             }
 
-            // Strategy #1 : Wait for RateLimits to be available
+            // Wait for RateLimits to be available
             this.logger.LogInformation("Waiting for RateLimits until: {0}", queryRateLimits.ResetDateTime.ToLongTimeString());
             Thread.Sleep((int)queryRateLimits.ResetDateTimeInMilliseconds);
         }
 
         internal void ProcessTimeline()
         {
-            var tweets = Timeline.GetHomeTimeline();
-            if (tweets == null)
+            var tweets = this.GetLatestTweets();
+            if (tweets.Count == 0)
             {
-                this.logger.LogDebug("No new tweets yet...");
+                var retryDelay = DateTime.UtcNow.AddSeconds(NoTweetsRetryDelayInSeconds);
+                this.logger.LogInformation("No new tweets yet, will retry at: {0}", retryDelay.ToLongTimeString());
+
+                Thread.Sleep(NoTweetsRetryDelayInSeconds * 1000);
                 return;
             }
 
+            this.logger.LogDebug("Downloaded {0} new tweets...", tweets.Count);
+
             foreach (var tweet in tweets)
             {
-                this.logger.LogTrace(tweet.Text);
+                this.lastProcessedTweetId = tweet.Id;
+
+                if (tweet.Id > this.sinceId)
+                {
+                    this.sinceId = tweet.Id;
+                }
 
                 if (tweet.PossiblySensitive)
                 {
-                    this.logger.LogDebug("Possibly sensitive tweet, ignoring.");
+                    this.logger.LogDebug("Tweet ID: {0} is possibly sensitive, ignoring.", tweet.Id);
                     continue;
                 }
+
+                this.logger.LogDebug("Processing tweet ID: {0}", tweet.Id);
 
                 this.ProcessLikes(tweet);
                 this.ProcessRetweets(tweet);
             }
+
+            if (tweets.Count < TweetBatchCount)
+            {
+                // we've come to the end of the processing batch, reset
+                this.lastProcessedTweetId = 0;
+            }
+        }
+
+        private ICollection<ITweet> GetLatestTweets()
+        {
+            var homeTimelineParameters = new HomeTimelineParameters
+            {
+                MaximumNumberOfTweetsToRetrieve = TweetBatchCount, ExcludeReplies = true
+            };
+
+            if (this.lastProcessedTweetId > 0)
+            {
+                homeTimelineParameters.MaxId = this.lastProcessedTweetId - 1;
+            }
+
+            if (this.sinceId > 0)
+            {
+                homeTimelineParameters.SinceId = this.sinceId;
+            }
+
+            var tweets = Timeline.GetHomeTimeline(homeTimelineParameters);
+            return tweets != null ? tweets.ToList() : new List<ITweet>();
         }
 
         private void ProcessLikes(ITweet tweet)
@@ -87,8 +134,12 @@ namespace Prime23.AutoRetweeter
             foreach (var hashTag in this.monitorSettings.LikeHashTags
                 .Where(hashTag => tweet.Hashtags.Exists(ht => ht.Text.Equals(hashTag, StringComparison.OrdinalIgnoreCase))))
             {
-                this.logger.LogInformation("Matching user ({0}) and hashtag ({1}), LIKE!", tweet.CreatedBy.UserIdentifier.ScreenName, hashTag);
-                Tweet.FavoriteTweet(tweet);
+                this.logger.LogInformation(
+                    "Tweet ID: {0} matches user ({1}) and hashtag ({2}), LIKE!",
+                    tweet.Id,
+                    tweet.CreatedBy.UserIdentifier.ScreenName,
+                    hashTag);
+                var success = Tweet.FavoriteTweet(tweet.Id);
                 break;
             }
         }
@@ -97,7 +148,7 @@ namespace Prime23.AutoRetweeter
         {
             if (tweet.IsRetweet)
             {
-                this.logger.LogDebug("This is already a retweet, ignoring.");
+                this.logger.LogDebug("Tweet ID: {0} is a retweet, ignoring.", tweet.Id);
                 return;
             }
 
@@ -110,8 +161,12 @@ namespace Prime23.AutoRetweeter
             foreach (var hashTag in this.monitorSettings.RetweetHashTags
                 .Where(hashTag => tweet.Hashtags.Exists(ht => ht.Text.Equals(hashTag, StringComparison.OrdinalIgnoreCase))))
             {
-                this.logger.LogInformation("Matching user ({0}) and hashtag ({1}), RETWEET!", tweet.CreatedBy.UserIdentifier.ScreenName, hashTag);
-                Tweet.PublishRetweet(tweet);
+                this.logger.LogInformation(
+                    "Tweet ID: {0} matches user ({1}) and hashtag ({2}), RETWEET!",
+                    tweet.Id,
+                    tweet.CreatedBy.UserIdentifier.ScreenName,
+                    hashTag);
+                var retweet = Tweet.PublishRetweet(tweet.Id);
                 break;
             }
         }
