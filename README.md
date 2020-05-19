@@ -1,2 +1,11 @@
 # AutoRetweeter
-Simple app to automatically retweet and like tweets from specified twitter account and/or with specified hashtags
+Simple application to automatically retweet and/or like tweets from specified twitter accounts and hashtags.
+
+# Twitter API Keys 
+https://developer.twitter.com/en/apps
+
+# Twitter Application ID
+17961403
+
+# 3rd Party Packages
+https://github.com/linvi/tweetinvi
