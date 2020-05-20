@@ -34,6 +34,7 @@ namespace Prime23.AutoRetweeter
         {
             Log.Logger = new LoggerConfiguration()
                 .ReadFrom.Configuration(Configuration)
+                .WriteTo.Console()
                 .CreateLogger();
 
             services.AddLogging(

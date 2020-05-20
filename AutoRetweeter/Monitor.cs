@@ -18,8 +18,8 @@ namespace Prime23.AutoRetweeter
 {
     public sealed class Monitor
     {
-        private const int TweetBatchCount = 20;
-        private const int NoTweetsRetryDelayInSeconds = 60;
+        private const int NoTweetsRetryDelayInSeconds = 20;
+        private const int TweetBatchCount = 200;
 
         private readonly ILogger<Monitor> logger;
         private readonly MonitorSettings monitorSettings;
@@ -37,6 +37,11 @@ namespace Prime23.AutoRetweeter
 
             var apiKeys = twitterSettings.Value;
             Auth.SetUserCredentials(apiKeys.ConsumerKey, apiKeys.ConsumerSecret, apiKeys.AccessToken, apiKeys.AccessTokenSecret);
+        }
+
+        private static string GetHashtags(ITweet tweet)
+        {
+            return tweet.Hashtags.Aggregate(string.Empty, (current, entity) => current + string.Concat(entity.Text, ","));
         }
 
         internal void CheckRateLimits(object sender, QueryBeforeExecuteEventArgs args)
@@ -69,6 +74,7 @@ namespace Prime23.AutoRetweeter
                 this.logger.LogInformation("No new tweets yet, will retry at: {0}", retryDelay.ToLongTimeString());
 
                 Thread.Sleep(NoTweetsRetryDelayInSeconds * 1000);
+                this.lastProcessedTweetId = 0;
                 return;
             }
 
@@ -83,20 +89,30 @@ namespace Prime23.AutoRetweeter
                     this.sinceId = tweet.Id;
                 }
 
+                var screenName = tweet.CreatedBy.UserIdentifier.ScreenName;
+                var hashTags = GetHashtags(tweet);
+
                 if (tweet.PossiblySensitive)
                 {
-                    this.logger.LogDebug("Tweet ID: {0} is possibly sensitive, ignoring.", tweet.Id);
+                    this.logger.LogWarning("Tweet ID: {0} by {1} is possibly sensitive, ignoring.", tweet.Id, screenName);
                     continue;
                 }
 
-                this.logger.LogDebug("Processing tweet ID: {0}", tweet.Id);
+                this.ProcessLikes(tweet.Id, screenName, hashTags);
 
-                this.ProcessLikes(tweet);
-                this.ProcessRetweets(tweet);
+                if (tweet.IsRetweet)
+                {
+                    this.logger.LogDebug("Tweet ID: {0} by {1} is a retweet, ignoring.", tweet.Id, screenName);
+                    continue;
+                }
+
+                this.ProcessRetweets(tweet.Id, screenName, hashTags);
             }
 
             if (tweets.Count < TweetBatchCount)
             {
+                this.logger.LogDebug("Tweet count {0} is less than batch size {1}, resetting max_id", tweets.Count, TweetBatchCount);
+
                 // we've come to the end of the processing batch, reset
                 this.lastProcessedTweetId = 0;
             }
@@ -106,7 +122,7 @@ namespace Prime23.AutoRetweeter
         {
             var homeTimelineParameters = new HomeTimelineParameters
             {
-                MaximumNumberOfTweetsToRetrieve = TweetBatchCount, ExcludeReplies = true
+                MaximumNumberOfTweetsToRetrieve = TweetBatchCount, ExcludeReplies = true, IncludeEntities = true
             };
 
             if (this.lastProcessedTweetId > 0)
@@ -119,54 +135,64 @@ namespace Prime23.AutoRetweeter
                 homeTimelineParameters.SinceId = this.sinceId;
             }
 
+            this.logger.LogDebug(
+                "GetHomeTimeline: count = {0}, max_id = {1}, since_id = {2}",
+                homeTimelineParameters.MaximumNumberOfTweetsToRetrieve,
+                homeTimelineParameters.MaxId,
+                homeTimelineParameters.SinceId);
+
             var tweets = Timeline.GetHomeTimeline(homeTimelineParameters);
             return tweets != null ? tweets.ToList() : new List<ITweet>();
         }
 
-        private void ProcessLikes(ITweet tweet)
+        private void ProcessLikes(long tweetId, string screenName, string hashTags)
         {
+            this.logger.LogDebug("Processing likes    for tweet ID: {0} by {1}, hashtags: {2}", tweetId, screenName, hashTags);
+
             if (!this.monitorSettings.LikeUsers.Any(
-                name => name.Equals(tweet.CreatedBy.UserIdentifier.ScreenName, StringComparison.OrdinalIgnoreCase)))
+                name => name.Equals(screenName, StringComparison.OrdinalIgnoreCase)))
             {
                 return;
             }
 
+            this.logger.LogDebug("Tweet ID: {0} matches user ({1})", tweetId, screenName);
+
             foreach (var hashTag in this.monitorSettings.LikeHashTags
-                .Where(hashTag => tweet.Hashtags.Exists(ht => ht.Text.Equals(hashTag, StringComparison.OrdinalIgnoreCase))))
+                .Where(hashTag => hashTags.Contains(hashTag, StringComparison.OrdinalIgnoreCase)))
             {
                 this.logger.LogInformation(
                     "Tweet ID: {0} matches user ({1}) and hashtag ({2}), LIKE!",
-                    tweet.Id,
-                    tweet.CreatedBy.UserIdentifier.ScreenName,
+                    tweetId,
+                    screenName,
                     hashTag);
-                var success = Tweet.FavoriteTweet(tweet.Id);
+
+                Tweet.FavoriteTweet(tweetId);
                 break;
             }
         }
 
-        private void ProcessRetweets(ITweet tweet)
+        private void ProcessRetweets(long tweetId, string screenName, string hashTags)
         {
-            if (tweet.IsRetweet)
-            {
-                this.logger.LogDebug("Tweet ID: {0} is a retweet, ignoring.", tweet.Id);
-                return;
-            }
+            this.logger.LogDebug("Processing retweets for tweet ID: {0} by {1}, hashtags: {2}", tweetId, screenName, hashTags);
 
             if (!this.monitorSettings.RetweetUsers.Any(
-                name => name.Equals(tweet.CreatedBy.UserIdentifier.ScreenName, StringComparison.OrdinalIgnoreCase)))
+                name => name.Equals(screenName, StringComparison.OrdinalIgnoreCase)))
             {
                 return;
             }
 
+            this.logger.LogDebug("Tweet ID: {0} matches user ({1})", tweetId, screenName);
+
             foreach (var hashTag in this.monitorSettings.RetweetHashTags
-                .Where(hashTag => tweet.Hashtags.Exists(ht => ht.Text.Equals(hashTag, StringComparison.OrdinalIgnoreCase))))
+                .Where(hashTag => hashTags.Contains(hashTag, StringComparison.OrdinalIgnoreCase)))
             {
                 this.logger.LogInformation(
                     "Tweet ID: {0} matches user ({1}) and hashtag ({2}), RETWEET!",
-                    tweet.Id,
-                    tweet.CreatedBy.UserIdentifier.ScreenName,
+                    tweetId,
+                    screenName,
                     hashTag);
-                var retweet = Tweet.PublishRetweet(tweet.Id);
+
+                Tweet.PublishRetweet(tweetId);
                 break;
             }
         }
