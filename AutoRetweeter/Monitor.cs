@@ -41,7 +41,7 @@ namespace Prime23.AutoRetweeter
 
         private static string GetHashtags(ITweet tweet)
         {
-            return tweet.Hashtags.Aggregate(string.Empty, (current, entity) => current + string.Concat(entity.Text, ","));
+            return string.Join(",", tweet.Hashtags.Select(ht => ht.Text));
         }
 
         internal void CheckRateLimits(object sender, QueryBeforeExecuteEventArgs args)
