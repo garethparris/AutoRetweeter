@@ -84,7 +84,7 @@ namespace Prime23.AutoRetweeter
                 return;
             }
 
-            this.logger.LogDebug("Downloaded {0} new tweets...", tweets.Count);
+            this.logger.LogInformation("Downloaded {0} new tweets...", tweets.Count);
 
             foreach (var tweet in tweets)
             {
@@ -206,7 +206,7 @@ namespace Prime23.AutoRetweeter
                 return false;
             }
 
-            this.logger.LogDebug("Batch completed. Resetting max_id.");
+            this.logger.LogInformation("Processing batch completed.");
 
             this.currentBatchLowestTweetId = null;
             return true;
