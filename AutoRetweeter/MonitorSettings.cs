@@ -15,11 +15,15 @@ namespace Prime23.AutoRetweeter
         {
             ' ', ',', ';', '\t'
         };
+        private readonly AppSettings appSettings;
 
         public MonitorSettings(
             IOptions<RetweetSettings> retweetSettings,
-            IOptions<LikeSettings> likeSettings)
+            IOptions<LikeSettings> likeSettings,
+            IOptions<AppSettings> appSettings)
         {
+            this.appSettings = appSettings.Value;
+
             this.RetweetHashTags = SplitToList(retweetSettings.Value.HashTags);
             this.RetweetUsers = SplitToList(retweetSettings.Value.Users);
 
@@ -27,9 +31,13 @@ namespace Prime23.AutoRetweeter
             this.LikeUsers = SplitToList(likeSettings.Value.Users);
         }
 
+        public int BatchSize => this.appSettings.BatchSize;
+
         public IList<string> LikeHashTags { get; }
 
         public IList<string> LikeUsers { get; }
+
+        public int PostBatchProcessingDelayInSeconds => this.appSettings.PostBatchProcessingDelayInSeconds;
 
         public IList<string> RetweetHashTags { get; }
 

@@ -56,7 +56,8 @@ namespace Prime23.AutoRetweeter
             services.AddOptions()
                 .Configure<TwitterSettings>(Configuration.GetSection("Twitter"))
                 .Configure<RetweetSettings>(Configuration.GetSection("Retweet"))
-                .Configure<LikeSettings>(Configuration.GetSection("Like"));
+                .Configure<LikeSettings>(Configuration.GetSection("Like"))
+                .Configure<AppSettings>(Configuration.GetSection("AppSettings"));
         }
 
         private static void Main()
@@ -90,10 +91,10 @@ namespace Prime23.AutoRetweeter
                 Environment.Exit(0);
             };
             
-            Console.WriteLine("Press CTRL+C to Exit");
-
             while (true)
             {
+                Console.WriteLine("Press CTRL+C to Exit");
+
                 monitor.ProcessTimeline();
             }
         }

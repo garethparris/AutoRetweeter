@@ -18,14 +18,11 @@ namespace Prime23.AutoRetweeter
 {
     public sealed class Monitor
     {
-        private const int NoTweetsRetryDelayInSeconds = 20;
-        private const int TweetBatchCount = 200;
-
         private readonly ILogger<Monitor> logger;
         private readonly MonitorSettings monitorSettings;
 
-        private long lastProcessedTweetId;
-        private long sinceId;
+        private long? currentBatchLowestTweetId;
+        private long highestTweetId;
 
         public Monitor(
             ILogger<Monitor> logger,
@@ -70,11 +67,20 @@ namespace Prime23.AutoRetweeter
             var tweets = this.GetLatestTweets();
             if (tweets.Count == 0)
             {
-                var retryDelay = DateTime.UtcNow.AddSeconds(NoTweetsRetryDelayInSeconds);
-                this.logger.LogInformation("No new tweets yet, will retry at: {0}", retryDelay.ToLongTimeString());
+                if (this.ResetAfterProcessingBatch())
+                {
+                    return;
+                }
 
-                Thread.Sleep(NoTweetsRetryDelayInSeconds * 1000);
-                this.lastProcessedTweetId = 0;
+                var retryDelay = DateTime.UtcNow.AddSeconds(this.monitorSettings.PostBatchProcessingDelayInSeconds);
+
+                this.logger.LogInformation(
+                    "No new tweets yet, will retry in {0} seconds at: {1}",
+                    this.monitorSettings.PostBatchProcessingDelayInSeconds,
+                    retryDelay.ToLongTimeString());
+
+                Thread.Sleep(this.monitorSettings.PostBatchProcessingDelayInSeconds * 1000);
+
                 return;
             }
 
@@ -82,11 +88,15 @@ namespace Prime23.AutoRetweeter
 
             foreach (var tweet in tweets)
             {
-                this.lastProcessedTweetId = tweet.Id;
-
-                if (tweet.Id > this.sinceId)
+                if (!this.currentBatchLowestTweetId.HasValue ||
+                    this.currentBatchLowestTweetId.Value > tweet.Id)
                 {
-                    this.sinceId = tweet.Id;
+                    this.currentBatchLowestTweetId = tweet.Id;
+                }
+
+                if (this.highestTweetId < tweet.Id)
+                {
+                    this.highestTweetId = tweet.Id;
                 }
 
                 var screenName = tweet.CreatedBy.UserIdentifier.ScreenName;
@@ -108,31 +118,23 @@ namespace Prime23.AutoRetweeter
 
                 this.ProcessRetweets(tweet.Id, screenName, hashTags);
             }
-
-            if (tweets.Count < TweetBatchCount)
-            {
-                this.logger.LogDebug("Tweet count {0} is less than batch size {1}, resetting max_id", tweets.Count, TweetBatchCount);
-
-                // we've come to the end of the processing batch, reset
-                this.lastProcessedTweetId = 0;
-            }
         }
 
         private ICollection<ITweet> GetLatestTweets()
         {
             var homeTimelineParameters = new HomeTimelineParameters
             {
-                MaximumNumberOfTweetsToRetrieve = TweetBatchCount, ExcludeReplies = true, IncludeEntities = true
+                MaximumNumberOfTweetsToRetrieve = this.monitorSettings.BatchSize, ExcludeReplies = false, IncludeEntities = true
             };
 
-            if (this.lastProcessedTweetId > 0)
+            if (this.currentBatchLowestTweetId.HasValue)
             {
-                homeTimelineParameters.MaxId = this.lastProcessedTweetId - 1;
+                homeTimelineParameters.MaxId = this.currentBatchLowestTweetId.Value - 1;
             }
 
-            if (this.sinceId > 0)
+            if (this.highestTweetId > 0)
             {
-                homeTimelineParameters.SinceId = this.sinceId;
+                homeTimelineParameters.SinceId = this.highestTweetId;
             }
 
             this.logger.LogDebug(
@@ -195,6 +197,19 @@ namespace Prime23.AutoRetweeter
                 Tweet.PublishRetweet(tweetId);
                 break;
             }
+        }
+
+        private bool ResetAfterProcessingBatch()
+        {
+            if (!this.currentBatchLowestTweetId.HasValue)
+            {
+                return false;
+            }
+
+            this.logger.LogDebug("Batch completed. Resetting max_id.");
+
+            this.currentBatchLowestTweetId = null;
+            return true;
         }
     }
 }
