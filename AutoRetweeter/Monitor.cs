@@ -34,32 +34,14 @@ namespace Prime23.AutoRetweeter
 
             var apiKeys = twitterSettings.Value;
             Auth.SetUserCredentials(apiKeys.ConsumerKey, apiKeys.ConsumerSecret, apiKeys.AccessToken, apiKeys.AccessTokenSecret);
+
+            RateLimit.RateLimitTrackerMode = RateLimitTrackerMode.TrackOnly;
+            TweetinviEvents.QueryBeforeExecute += this.CheckRateLimits;
         }
 
         private static string GetHashtags(ITweet tweet)
         {
             return string.Join(",", tweet.Hashtags.Select(ht => ht.Text));
-        }
-
-        internal void CheckRateLimits(object sender, QueryBeforeExecuteEventArgs args)
-        {
-            var queryRateLimits = RateLimit.GetQueryRateLimit(args.QueryURL);
-
-            // Some methods are not RateLimited. Invoking such a method will result in the queryRateLimits to be null
-            if (queryRateLimits == null)
-            {
-                return;
-            }
-
-            if (queryRateLimits.Remaining > 0)
-            {
-                // We have enough resource to execute the query
-                return;
-            }
-
-            // Wait for RateLimits to be available
-            this.logger.LogInformation("Waiting for RateLimits until: {0}", queryRateLimits.ResetDateTime.ToLongTimeString());
-            Thread.Sleep((int)queryRateLimits.ResetDateTimeInMilliseconds);
         }
 
         internal void ProcessTimeline()
@@ -118,6 +100,27 @@ namespace Prime23.AutoRetweeter
 
                 this.ProcessRetweets(tweet.Id, screenName, hashTags);
             }
+        }
+
+        private void CheckRateLimits(object sender, QueryBeforeExecuteEventArgs args)
+        {
+            var queryRateLimits = RateLimit.GetQueryRateLimit(args.QueryURL);
+
+            // Some methods are not RateLimited. Invoking such a method will result in the queryRateLimits to be null
+            if (queryRateLimits == null)
+            {
+                return;
+            }
+
+            if (queryRateLimits.Remaining > 0)
+            {
+                // We have enough resource to execute the query
+                return;
+            }
+
+            // Wait for RateLimits to be available
+            this.logger.LogInformation("Waiting for RateLimits until: {0}", queryRateLimits.ResetDateTime.ToLongTimeString());
+            Thread.Sleep((int)queryRateLimits.ResetDateTimeInMilliseconds);
         }
 
         private ICollection<ITweet> GetLatestTweets()

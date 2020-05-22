@@ -10,8 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 using Serilog;
 
-using Tweetinvi;
-
 namespace Prime23.AutoRetweeter
 {
     internal sealed class Program
@@ -55,9 +53,9 @@ namespace Prime23.AutoRetweeter
         {
             services.AddOptions()
                 .Configure<TwitterSettings>(Configuration.GetSection("Twitter"))
+                .Configure<AppSettings>(Configuration.GetSection("AppSettings"))
                 .Configure<RetweetSettings>(Configuration.GetSection("Retweet"))
-                .Configure<LikeSettings>(Configuration.GetSection("Like"))
-                .Configure<AppSettings>(Configuration.GetSection("AppSettings"));
+                .Configure<LikeSettings>(Configuration.GetSection("Like"));
         }
 
         private static void Main()
@@ -81,9 +79,6 @@ namespace Prime23.AutoRetweeter
 
             var serviceProvider = services.BuildServiceProvider();
             var monitor = serviceProvider.GetService<Monitor>();
-
-            RateLimit.RateLimitTrackerMode = RateLimitTrackerMode.TrackOnly;
-            TweetinviEvents.QueryBeforeExecute += monitor.CheckRateLimits;
 
             Console.CancelKeyPress += (sender, e) =>
             {
