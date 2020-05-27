@@ -85,11 +85,11 @@ namespace Prime23.AutoRetweeter
                 Console.WriteLine("Exiting...");
                 Environment.Exit(0);
             };
-            
+
+            Console.WriteLine("Press CTRL+C to Exit");
+
             while (true)
             {
-                Console.WriteLine("Press CTRL+C to Exit");
-
                 monitor.ProcessTimeline();
             }
         }
