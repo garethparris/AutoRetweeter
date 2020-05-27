@@ -7,10 +7,8 @@ using System.Linq;
 using System.Threading;
 
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 using Tweetinvi;
-using Tweetinvi.Events;
 using Tweetinvi.Models;
 using Tweetinvi.Parameters;
 
@@ -24,19 +22,15 @@ namespace Prime23.AutoRetweeter
         private long? currentBatchLowestTweetId;
         private long highestTweetId;
 
-        public Monitor(
-            ILogger<Monitor> logger,
-            MonitorSettings monitorSettings,
-            IOptions<TwitterSettings> twitterSettings)
+        public Monitor(ILogger<Monitor> logger, MonitorSettings monitorSettings, RateLimitHandler rateLimitHandler)
         {
             this.logger = logger;
             this.monitorSettings = monitorSettings;
 
-            var apiKeys = twitterSettings.Value;
+            var apiKeys = monitorSettings.twitterSettings;
             Auth.SetUserCredentials(apiKeys.ConsumerKey, apiKeys.ConsumerSecret, apiKeys.AccessToken, apiKeys.AccessTokenSecret);
 
-            RateLimit.RateLimitTrackerMode = RateLimitTrackerMode.TrackOnly;
-            TweetinviEvents.QueryBeforeExecute += this.CheckRateLimits;
+            rateLimitHandler.Initialize();
         }
 
         private static string GetHashtags(ITweet tweet)
@@ -100,27 +94,6 @@ namespace Prime23.AutoRetweeter
 
                 this.ProcessRetweets(tweet.Id, screenName, hashTags);
             }
-        }
-
-        private void CheckRateLimits(object sender, QueryBeforeExecuteEventArgs args)
-        {
-            var queryRateLimits = RateLimit.GetQueryRateLimit(args.QueryURL);
-
-            // Some methods are not RateLimited. Invoking such a method will result in the queryRateLimits to be null
-            if (queryRateLimits == null)
-            {
-                return;
-            }
-
-            if (queryRateLimits.Remaining > 0)
-            {
-                // We have enough resource to execute the query
-                return;
-            }
-
-            // Wait for RateLimits to be available
-            this.logger.LogInformation("Waiting for RateLimits until: {0}", queryRateLimits.ResetDateTime.ToLongTimeString());
-            Thread.Sleep((int)queryRateLimits.ResetDateTimeInMilliseconds);
         }
 
         private ICollection<ITweet> GetLatestTweets()

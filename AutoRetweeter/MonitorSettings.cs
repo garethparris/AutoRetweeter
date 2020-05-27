@@ -5,7 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
+
+using Prime23.AutoRetweeter.Models;
 
 namespace Prime23.AutoRetweeter
 {
@@ -17,18 +19,23 @@ namespace Prime23.AutoRetweeter
         };
         private readonly AppSettings appSettings;
 
-        public MonitorSettings(
-            IOptions<RetweetSettings> retweetSettings,
-            IOptions<LikeSettings> likeSettings,
-            IOptions<AppSettings> appSettings)
+        public MonitorSettings(IConfiguration configuration)
         {
-            this.appSettings = appSettings.Value;
+            var userGroups = configuration.GetSection("UserGroups").Get<UserGroup[]>();
+            var tagGroups = configuration.GetSection("TagGroups").Get<TagGroup[]>();
+            var actions = configuration.GetSection("Actions").Get<ActionGroup[]>();
 
-            this.RetweetHashTags = SplitToList(retweetSettings.Value.HashTags);
-            this.RetweetUsers = SplitToList(retweetSettings.Value.Users);
+            this.appSettings = configuration.GetSection("AppSettings").Get<AppSettings>();
+            this.twitterSettings = configuration.GetSection("Twitter").Get<TwitterSettings>();
 
-            this.LikeHashTags = SplitToList(likeSettings.Value.HashTags);
-            this.LikeUsers = SplitToList(likeSettings.Value.Users);
+            var retweetSettings = configuration.GetSection("Retweet").Get<RetweetSettings>();
+            var likeSettings = configuration.GetSection("Like").Get<LikeSettings>();
+
+            this.RetweetHashTags = SplitToList(retweetSettings.HashTags);
+            this.RetweetUsers = SplitToList(retweetSettings.Users);
+
+            this.LikeHashTags = SplitToList(likeSettings.HashTags);
+            this.LikeUsers = SplitToList(likeSettings.Users);
         }
 
         public int BatchSize => this.appSettings.BatchSize;
@@ -42,6 +49,8 @@ namespace Prime23.AutoRetweeter
         public IList<string> RetweetHashTags { get; }
 
         public IList<string> RetweetUsers { get; }
+
+        public TwitterSettings twitterSettings { get; }
 
         private static List<string> SplitToList(string value)
         {

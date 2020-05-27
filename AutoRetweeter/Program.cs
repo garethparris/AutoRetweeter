@@ -8,6 +8,8 @@ using System.IO;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
+using Prime23.AutoRetweeter.Models;
+
 using Serilog;
 
 namespace Prime23.AutoRetweeter
@@ -45,17 +47,11 @@ namespace Prime23.AutoRetweeter
         private static void ConfigureScopes(IServiceCollection services)
         {
             services
+                .AddOptions()
+                .AddSingleton(Configuration)
+                .AddSingleton<RateLimitHandler>()
                 .AddSingleton<MonitorSettings>()
                 .AddSingleton<Monitor>();
-        }
-
-        private static void ConfigureSettings(IServiceCollection services)
-        {
-            services.AddOptions()
-                .Configure<TwitterSettings>(Configuration.GetSection("Twitter"))
-                .Configure<AppSettings>(Configuration.GetSection("AppSettings"))
-                .Configure<RetweetSettings>(Configuration.GetSection("Retweet"))
-                .Configure<LikeSettings>(Configuration.GetSection("Like"));
         }
 
         private static void Main()
@@ -72,8 +68,6 @@ namespace Prime23.AutoRetweeter
             Configuration = builder.Build();
 
             var services = new ServiceCollection();
-
-            ConfigureSettings(services);
             ConfigureLogging(services);
             ConfigureScopes(services);
 
