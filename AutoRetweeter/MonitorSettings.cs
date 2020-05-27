@@ -21,36 +21,47 @@ namespace Prime23.AutoRetweeter
 
         public MonitorSettings(IConfiguration configuration)
         {
-            var userGroups = configuration.GetSection("UserGroups").Get<UserGroup[]>();
             var tagGroups = configuration.GetSection("TagGroups").Get<TagGroup[]>();
-            var actions = configuration.GetSection("Actions").Get<ActionGroup[]>();
+            var tagGroupLookup = new Dictionary<string, List<string>>();
+            foreach (var tagGroup in tagGroups)
+            {
+                var hashTags = SplitToList(tagGroup.Tags.ToLower());
+                tagGroupLookup.Add(tagGroup.Group, hashTags);
+            }
+
+            var userGroups = configuration.GetSection("UserGroups").Get<UserGroup[]>();
+            this.ActionLookup = new Dictionary<string, TagGroupAction>();
+
+            foreach (var userGroup in userGroups)
+            {
+                var shouldLike = userGroup.Like.Equals("yes", StringComparison.OrdinalIgnoreCase);
+                var shouldRetweet = userGroup.Retweet.Equals("yes", StringComparison.OrdinalIgnoreCase);
+
+                if (!tagGroupLookup.TryGetValue(userGroup.TagGroup, out var hashTags))
+                {
+                    hashTags = new List<string>();
+                }
+
+                var tagGroupAction = new TagGroupAction(hashTags, shouldLike, shouldRetweet);
+
+                var userNames = SplitToList(userGroup.Users);
+                foreach (var userName in userNames)
+                {
+                    this.ActionLookup.Add(userName.ToLower(), tagGroupAction);
+                }
+            }
 
             this.appSettings = configuration.GetSection("AppSettings").Get<AppSettings>();
-            this.twitterSettings = configuration.GetSection("Twitter").Get<TwitterSettings>();
-
-            var retweetSettings = configuration.GetSection("Retweet").Get<RetweetSettings>();
-            var likeSettings = configuration.GetSection("Like").Get<LikeSettings>();
-
-            this.RetweetHashTags = SplitToList(retweetSettings.HashTags);
-            this.RetweetUsers = SplitToList(retweetSettings.Users);
-
-            this.LikeHashTags = SplitToList(likeSettings.HashTags);
-            this.LikeUsers = SplitToList(likeSettings.Users);
+            this.TwitterSettings = configuration.GetSection("Twitter").Get<TwitterSettings>();
         }
+
+        public IDictionary<string, TagGroupAction> ActionLookup { get; }
 
         public int BatchSize => this.appSettings.BatchSize;
 
-        public IList<string> LikeHashTags { get; }
-
-        public IList<string> LikeUsers { get; }
-
         public int PostBatchProcessingDelayInSeconds => this.appSettings.PostBatchProcessingDelayInSeconds;
 
-        public IList<string> RetweetHashTags { get; }
-
-        public IList<string> RetweetUsers { get; }
-
-        public TwitterSettings twitterSettings { get; }
+        public TwitterSettings TwitterSettings { get; }
 
         private static List<string> SplitToList(string value)
         {

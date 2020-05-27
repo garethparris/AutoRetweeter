@@ -8,6 +8,8 @@ using System.Threading;
 
 using Microsoft.Extensions.Logging;
 
+using Prime23.AutoRetweeter.Models;
+
 using Tweetinvi;
 using Tweetinvi.Models;
 using Tweetinvi.Parameters;
@@ -27,7 +29,7 @@ namespace Prime23.AutoRetweeter
             this.logger = logger;
             this.monitorSettings = monitorSettings;
 
-            var apiKeys = monitorSettings.twitterSettings;
+            var apiKeys = monitorSettings.TwitterSettings;
             Auth.SetUserCredentials(apiKeys.ConsumerKey, apiKeys.ConsumerSecret, apiKeys.AccessToken, apiKeys.AccessTokenSecret);
 
             rateLimitHandler.Initialize();
@@ -35,7 +37,7 @@ namespace Prime23.AutoRetweeter
 
         private static string GetHashtags(ITweet tweet)
         {
-            return string.Join(",", tweet.Hashtags.Select(ht => ht.Text));
+            return string.Join(",", tweet.Hashtags.Select(ht => ht.Text)).ToLower();
         }
 
         internal void ProcessTimeline()
@@ -75,7 +77,7 @@ namespace Prime23.AutoRetweeter
                     this.highestTweetId = tweet.Id;
                 }
 
-                var screenName = tweet.CreatedBy.UserIdentifier.ScreenName;
+                var screenName = tweet.CreatedBy.UserIdentifier.ScreenName.ToLower();
                 var hashTags = GetHashtags(tweet);
 
                 if (tweet.PossiblySensitive)
@@ -84,15 +86,26 @@ namespace Prime23.AutoRetweeter
                     continue;
                 }
 
-                this.ProcessLikes(tweet.Id, screenName, hashTags);
-
-                if (tweet.IsRetweet)
+                if (!this.monitorSettings.ActionLookup.TryGetValue(screenName, out var tagGroupAction))
                 {
-                    this.logger.LogDebug("Tweet ID: {0} by {1} is a retweet, ignoring.", tweet.Id, screenName);
                     continue;
                 }
 
-                this.ProcessRetweets(tweet.Id, screenName, hashTags);
+                this.logger.LogDebug("Tweet ID: {0} matches user ({1})", tweet.Id, screenName);
+
+                if (tagGroupAction.HashTags.Count == 0)
+                {
+                    this.ProcessAction(tagGroupAction, tweet, screenName);
+                }
+                else
+                {
+                    foreach (var hashTag in tagGroupAction.HashTags.Where(hashTags.Contains))
+                    {
+                        this.ProcessAction(tagGroupAction, tweet, screenName, hashTag);
+
+                        break;
+                    }
+                }
             }
         }
 
@@ -123,55 +136,57 @@ namespace Prime23.AutoRetweeter
             return tweets != null ? tweets.ToList() : new List<ITweet>();
         }
 
-        private void ProcessLikes(long tweetId, string screenName, string hashTags)
+        private void ProcessAction(TagGroupAction tagGroupAction, ITweet tweet, string screenName, string hashTag = null)
         {
-            this.logger.LogDebug("Processing likes    for tweet ID: {0} by {1}, hashtags: {2}", tweetId, screenName, hashTags);
+            if (tagGroupAction.Like)
+            {
+                if (string.IsNullOrEmpty(hashTag))
+                {
+                    this.logger.LogInformation(
+                        "Tweet ID: {0} matches user ({1}), LIKE!",
+                        tweet.Id,
+                        screenName);
+                }
+                else
+                {
+                    this.logger.LogInformation(
+                        "Tweet ID: {0} matches user ({1}) and hashtag ({2}), LIKE!",
+                        tweet.Id,
+                        screenName,
+                        hashTag);
+                }
 
-            if (!this.monitorSettings.LikeUsers.Any(
-                name => name.Equals(screenName, StringComparison.OrdinalIgnoreCase)))
+                Tweet.FavoriteTweet(tweet.Id);
+            }
+
+            if (!tagGroupAction.Retweet)
             {
                 return;
             }
 
-            this.logger.LogDebug("Tweet ID: {0} matches user ({1})", tweetId, screenName);
-
-            foreach (var hashTag in this.monitorSettings.LikeHashTags
-                .Where(hashTag => hashTags.Contains(hashTag, StringComparison.OrdinalIgnoreCase)))
+            if (tweet.IsRetweet)
             {
-                this.logger.LogInformation(
-                    "Tweet ID: {0} matches user ({1}) and hashtag ({2}), LIKE!",
-                    tweetId,
-                    screenName,
-                    hashTag);
-
-                Tweet.FavoriteTweet(tweetId);
-                break;
+                this.logger.LogDebug("Tweet ID: {0} by {1} is a retweet, ignoring.", tweet.Id, screenName);
             }
-        }
-
-        private void ProcessRetweets(long tweetId, string screenName, string hashTags)
-        {
-            this.logger.LogDebug("Processing retweets for tweet ID: {0} by {1}, hashtags: {2}", tweetId, screenName, hashTags);
-
-            if (!this.monitorSettings.RetweetUsers.Any(
-                name => name.Equals(screenName, StringComparison.OrdinalIgnoreCase)))
+            else
             {
-                return;
-            }
+                if (string.IsNullOrEmpty(hashTag))
+                {
+                    this.logger.LogInformation(
+                        "Tweet ID: {0} matches user ({1}), RETWEET!",
+                        tweet.Id,
+                        screenName);
+                }
+                else
+                {
+                    this.logger.LogInformation(
+                        "Tweet ID: {0} matches user ({1}) and hashtag ({2}), RETWEET!",
+                        tweet.Id,
+                        screenName,
+                        hashTag);
+                }
 
-            this.logger.LogDebug("Tweet ID: {0} matches user ({1})", tweetId, screenName);
-
-            foreach (var hashTag in this.monitorSettings.RetweetHashTags
-                .Where(hashTag => hashTags.Contains(hashTag, StringComparison.OrdinalIgnoreCase)))
-            {
-                this.logger.LogInformation(
-                    "Tweet ID: {0} matches user ({1}) and hashtag ({2}), RETWEET!",
-                    tweetId,
-                    screenName,
-                    hashTag);
-
-                Tweet.PublishRetweet(tweetId);
-                break;
+                Tweet.PublishRetweet(tweet.Id);
             }
         }
 

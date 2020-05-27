@@ -7,6 +7,12 @@ namespace Prime23.AutoRetweeter.Models
     {
         public string Group { get; set; }
 
+        public string Like { get; set; }
+
+        public string Retweet { get; set; }
+
+        public string TagGroup { get; set; }
+
         public string Users { get; set; }
     }
 }
