@@ -42,7 +42,7 @@ namespace Prime23.AutoRetweeter
 
         private static string GetStatus(string value)
         {
-            return string.IsNullOrEmpty(value) ? "loaded ok" : "not loaded!";
+            return string.IsNullOrEmpty(value) || value.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase) ? "invalid" : "OK";
         }
 
         private static Dictionary<string, List<string>> GetTagGroups(IConfiguration configuration)
@@ -112,10 +112,10 @@ namespace Prime23.AutoRetweeter
                 twitterSettings = configuration.GetSection("Twitter").Get<TwitterSettings>();
             }
 
-            this.logger.LogInformation("Twitter Consumer Key {0}", GetStatus(twitterSettings.ConsumerKey));
-            this.logger.LogInformation("Twitter Consumer Secret {0}", GetStatus(twitterSettings.ConsumerSecret));
-            this.logger.LogInformation("Twitter Access Token {0}", GetStatus(twitterSettings.AccessToken));
-            this.logger.LogInformation("Twitter Access Token Secret {0}", GetStatus(twitterSettings.AccessTokenSecret));
+            this.logger.LogInformation("Twitter Consumer Key: {0}", GetStatus(twitterSettings.ConsumerKey));
+            this.logger.LogInformation("Twitter Consumer Secret: {0}", GetStatus(twitterSettings.ConsumerSecret));
+            this.logger.LogInformation("Twitter Access Token: {0}", GetStatus(twitterSettings.AccessToken));
+            this.logger.LogInformation("Twitter Access Token Secret: {0}", GetStatus(twitterSettings.AccessTokenSecret));
 
             return twitterSettings;
         }
