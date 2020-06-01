@@ -40,8 +40,6 @@ namespace Prime23.AutoRetweeter
 
         internal TwitterSettings TwitterSettings { get; }
 
-        private static bool InDocker => Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
-
         private static string GetStatus(string value)
         {
             return string.IsNullOrEmpty(value) ? "loaded ok" : "not loaded!";
@@ -99,7 +97,7 @@ namespace Prime23.AutoRetweeter
         {
             TwitterSettings twitterSettings;
 
-            if (InDocker)
+            if (EnvironmentHelper.InDocker)
             {
                 twitterSettings = new TwitterSettings
                 {

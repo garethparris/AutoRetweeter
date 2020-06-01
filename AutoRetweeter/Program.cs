@@ -2,40 +2,31 @@
 // Copyright © 2016-2020 Prime 23 Consultancy Limited. All rights reserved.</copyright>
 
 using System;
-using System.Diagnostics;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using Prime23.AutoRetweeter.Models;
 
 using Serilog;
-using Serilog.Sinks.SystemConsole.Themes;
 
 namespace Prime23.AutoRetweeter
 {
     internal sealed class Program
     {
-        private static IConfiguration Configuration { get; set; }
+        private static readonly AutoResetEvent WaitHandle = new AutoResetEvent(false);
 
-        private static bool IsDevelopment
-        {
-            get
-            {
-#if DEBUG
-                return Debugger.IsAttached;
-#else
-                return false;
-#endif
-            }
-        }
+        private static IConfiguration Configuration { get; set; }
 
         private static void ConfigureLogging(IServiceCollection services)
         {
             Log.Logger = new LoggerConfiguration()
-                .ReadFrom.Configuration(Configuration)
-                .WriteTo.Console(theme: AnsiConsoleTheme.Code)
+                .MinimumLevel.Information()
+                .WriteTo.Console()
                 .CreateLogger();
 
             services.AddLogging(
@@ -61,7 +52,7 @@ namespace Prime23.AutoRetweeter
                 .SetBasePath(Directory.GetCurrentDirectory())
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 
-            if (IsDevelopment) //only add secrets in development
+            if (EnvironmentHelper.IsDevelopment) //only add secrets in development
             {
                 builder.AddUserSecrets<TwitterSettings>();
             }
@@ -73,20 +64,28 @@ namespace Prime23.AutoRetweeter
             ConfigureScopes(services);
 
             var serviceProvider = services.BuildServiceProvider();
-            var monitor = serviceProvider.GetService<Monitor>();
 
-            Console.CancelKeyPress += (sender, e) =>
+            var logger = serviceProvider.GetService<ILogger<Program>>();
+            logger.LogInformation("Press CTRL+C to Exit");
+
+            Task.Run(
+                () =>
+                {
+                    var monitor = serviceProvider.GetService<Monitor>();
+
+                    while (true)
+                    {
+                        monitor.ProcessTimeline();
+                    }
+                });
+
+            Console.CancelKeyPress += (_, __) =>
             {
-                Console.WriteLine("Exiting...");
-                Environment.Exit(0);
+                logger.LogInformation("Exit");
+                WaitHandle.Set();
             };
 
-            Console.WriteLine("Press CTRL+C to Exit");
-
-            while (true)
-            {
-                monitor.ProcessTimeline();
-            }
+            WaitHandle.WaitOne();
         }
     }
 }
