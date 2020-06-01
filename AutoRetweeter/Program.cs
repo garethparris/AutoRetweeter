@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Prime23.AutoRetweeter.Models;
 
 using Serilog;
+using Serilog.Sinks.SystemConsole.Themes;
 
 namespace Prime23.AutoRetweeter
 {
@@ -34,7 +35,7 @@ namespace Prime23.AutoRetweeter
         {
             Log.Logger = new LoggerConfiguration()
                 .ReadFrom.Configuration(Configuration)
-                .WriteTo.Console()
+                .WriteTo.Console(theme: AnsiConsoleTheme.Code)
                 .CreateLogger();
 
             services.AddLogging(
