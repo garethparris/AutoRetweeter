@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/runtime:5.0.8-buster-slim-arm32v7 AS base
+FROM mcr.microsoft.com/dotnet/aspnet:5.0-buster-slim-arm32v7 AS base
 WORKDIR /app
 
 FROM mcr.microsoft.com/dotnet/sdk:5.0-buster-slim AS build
