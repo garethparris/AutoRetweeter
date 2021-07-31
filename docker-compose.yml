@@ -1,0 +1,8 @@
+version: '3.4'
+
+services:
+  autoretweeter:
+    image: ${DOCKER_REGISTRY-}autoretweeter
+    build:
+      context: .
+      dockerfile: AutoRetweeter/Dockerfile
